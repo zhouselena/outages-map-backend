@@ -1,57 +1,45 @@
-import cors from 'cors';
+import 'dotenv/config';
 import express from 'express';
-import bodyParser from 'body-parser';
-import morgan from 'morgan';
-import env from 'env-var';
-import dotenv from 'dotenv';
+import cors from 'cors';
+import mongoose from 'mongoose';
 
-import { errorHandler } from 'errors';
-import { validationErrorHandler } from 'validation';
-import {
-  authRouter, 
-  userRouter, 
-  resourceRouter, 
-  itemRouter,
-} from './routers';
+import authRoutes from './routes/auth';
+import outagesRoutes from './routes/outages';
 
-import * as constants from './util/constants';
-
-dotenv.config();
-
-// initialize
 const app = express();
+const PORT = parseInt(process.env.PORT ?? '5001', 10);
 
-// enable/disable cross origin resource sharing if necessary
+// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// enable/disable http request logging
-if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
+// ── Routes ────────────────────────────────────────────────────────────────────
+app.use('/api/auth',    authRoutes);
+app.use('/api/outages', outagesRoutes);
 
-// enable json message body for posting data to API
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-
-// declare routers
-app.use('/auth', authRouter); // NOTE: Not secured
-app.use('/users', userRouter); // NOTE: Completely secured to users
-app.use('/resources', resourceRouter); // NOTE: Partially secured to users
-app.use('/items', itemRouter);
-
-// default index route
-app.get('/', (req, res) => {
-  res.send('Welcome to backend!');
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Custom 404 middleware
-app.use((req, res) => {
-  res.status(404).json({ message: 'The route you\'ve requested doesn\'t exist' });
-});
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+const mongoUri = process.env.MONGODB_URI;
+if (!mongoUri) {
+  console.error('MONGODB_URI is not set');
+  process.exit(1);
+}
 
-app.use(validationErrorHandler);
-app.use(errorHandler);
+mongoose
+  .connect(mongoUri)
+  .then(() => {
+    console.log('✓ Connected to MongoDB');
+    app.listen(PORT, () => {
+      console.log(`✓ Server running on http://localhost:${PORT}`);
+    });
+  })
+  .catch((err: Error) => {
+    console.error('MongoDB connection error:', err.message);
+    process.exit(1);
+  });
 
-// START THE SERVER
-// =============================================================================
-const server = app.listen(constants.PORT);
-if (process.env.NODE_ENV !== 'test') console.log(`listening on: ${constants.PORT}`);
-export default server;
+export default app;
